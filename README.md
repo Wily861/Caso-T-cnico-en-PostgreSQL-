@@ -586,5 +586,116 @@ SELECT schedule_id, valor_cuota, saldo_pendiente, estado, fecha_vencimiento
 FROM core.payment_schedule
 WHERE schedule_id = 1;
 ```
+![Verificar Resultado](https://drive.google.com/uc?export=view&id=1nbJxx6Sv7IRJnJmUy05bw6fTrB8fRoGi)
 
 --- 
+## Índice
+
+```SQL
+-- ============================================================
+-- 4. Índice parcial: optimiza búsquedas de cuotas con saldo > 0
+-- ============================================================
+CREATE INDEX IF NOT EXISTS idx_payment_schedule_saldo_pendiente
+ON core.payment_schedule (saldo_pendiente)
+WHERE saldo_pendiente > 0;
+```
+![Índice Parcial](https://drive.google.com/uc?export=view&id=1JemXVkNq1zkiPt2qikdn8sTJ2JmfW6CE)
+
+```SQL
+/* ============================================================
+   Validación rápida
+   ============================================================ */
+-- Revisar los primeros 10 schedules con estado y saldo actualizado
+SELECT schedule_id, num_cuota, valor_cuota, saldo_pendiente, estado
+FROM core.payment_schedule
+ORDER BY schedule_id
+LIMIT 10;
+```
+
+![Validar Índice](https://drive.google.com/uc?export=view&id=1yjXcZzNc7qs2X8a6shNUIeQrkyrYAquR)
+
+--- 
+
+## Índices recomendados ejecutados 
+
+```SQL
+-- ============================================================
+-- 4. Índices recomendados para optimización mínima
+-- ============================================================
+
+-- Índice para cuotas vencidas en estado pendiente o parcial
+CREATE INDEX IF NOT EXISTS ix_ps_vencidas
+ON core.payment_schedule (fecha_vencimiento)
+WHERE estado IN ('pendiente','parcial');
+
+-- Índice compuesto por crédito y número de cuota
+CREATE INDEX IF NOT EXISTS ix_ps_credito_cuota
+ON core.payment_schedule (credito_id, num_cuota);
+
+-- Índice para pagos por schedule y fecha
+CREATE INDEX IF NOT EXISTS ix_pagos_schedule_fecha
+ON core.pagos (schedule_id, fecha_pago);
+
+-- Índice adicional si se persiste saldo
+CREATE INDEX IF NOT EXISTS ix_ps_saldo_vencido
+ON core.payment_schedule (fecha_vencimiento, saldo_pendiente)
+WHERE saldo_pendiente > 0;
+```
+![Índice Recomendado](https://drive.google.com/uc?export=view&id=1ZTBx6U3IZHlWcViquyNubHMSMYn0-N5g)
+
+--- 
+```SQL
+-- 1 Consulta original (antes de optimizar 1.b)
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT *
+FROM core.payment_schedule
+WHERE estado IN ('pendiente','parcial')
+  -- 1 Consulta original (antes de optimizar 1.b)
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT *
+FROM core.payment_schedule
+WHERE estado IN ('pendiente','parcial')
+  AND fecha_vencimiento < CURRENT_DATE;
+```
+![Buffer](https://drive.google.com/uc?export=view&id=1J8QxtFdQNX2143iaCBwEIj1GQpSx8tE2)
+
+```SQL
+-- 2 Consulta optimizada (después de aplicar 1.b)
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT fecha_vencimiento, credito_id, num_cuota, saldo_pendiente
+FROM core.payment_schedule
+WHERE estado IN ('pendiente','parcial')
+  AND fecha_vencimiento < CURRENT_DATE;
+```
+![Consulta Optimizada](https://drive.google.com/uc?export=view&id=1HMgGk80s50Lsgr_hUaoVwnGXCeHB4orf)
+
+--- 
+
+## 5) Plan de Transición de Desarrollo a Producción
+
+Para asegurar un despliegue **dev → prod** sin fricción, se propone un plan basado en las mejores prácticas de la industria, garantizando la integridad de los datos y la continuidad del servicio.
+
+### 1. Gestión de Entornos y Esquemas Separados
+- Se recomienda usar **esquemas de bases de datos separados** (dev y prod) dentro de una misma instancia, o bien **entornos totalmente distintos** para cada etapa del desarrollo.  
+- Esto permite:
+  - Probar con datos de desarrollo sin afectar la base de datos de producción.
+  - Mantener la estructura del código y los scripts de migración consistentes.
+
+### 2. Pipeline de Migraciones Simple
+- El despliegue se gestiona mediante **scripts de migración con control de versiones** (ej. `V1__create_schema_dev.sql`, `V2__create_tables.sql`).  
+- Flujo recomendado:
+  1. Aplicar los scripts primero en **dev** para probar lógica y rendimiento.
+  2. Una vez validados, aplicarlos en **producción** usando:
+     - **Transacciones** para asegurar atomicidad.
+     - **CONCURRENTLY** al crear índices, minimizando bloqueos y evitando interrupciones al servicio.
+
+### 3. Plan de Rollback y Auditoría
+- Antes de cualquier despliegue en producción:
+  - Realizar **copia de seguridad** de la base de datos (ej. `pg_dump`) como red de seguridad.
+  - Implementar **tabla de auditoría** con triggers (ej. `audit_log`) para registrar modificaciones en tablas críticas.  
+- Beneficios:
+  - Trazabilidad completa de cambios.
+  - Recuperación rápida en caso de incidentes.
+
+
+
