@@ -5,6 +5,13 @@
 Este repositorio contiene el desarrollo de un **caso técnica en PostgreSQL**, donde se modela y simula un sistema de **gestión de créditos**.  
 
 ---
+### 👤 Autor
+**Wily Duvan Villamil Rey**  
+
+### 📌 Rol
+Administrador de Base de Datos
+
+---
 
 ## 🛠️ Herramientas utilizadas  
 - **PostgreSQL** → Motor de base de datos relacional utilizado para crear, poblar y consultar la información.  
